@@ -156,13 +156,28 @@ export function detectRoom(allPts) {
   const ceilY = hasCeiling ? yLo + (ceilBin + 0.5) * ybin : null;
   const top = ceilY ?? yHi;
 
+  // Which way is up? Furniture fills the metre above a floor; the metre below a ceiling is
+  // mostly empty. If the "ceiling" side is much busier, the scan is upside down.
+  let nearFloor = 0, nearCeiling = 0;
+  if (ceilY !== null) {
+    const band = Math.min(1.1, (ceilY - floorY) * 0.45);
+    for (let i = 0; i < n; i++) {
+      const y = pts[3 * i + 1];
+      if (y > floorY + 0.15 && y < floorY + band) nearFloor++;
+      else if (y < ceilY - 0.15 && y > ceilY - band) nearCeiling++;
+    }
+  }
+  const upsideDown = ceilY !== null && nearCeiling > 1.3 * nearFloor;
+
   // --- split into floor points and wall-band points ---
+  // (h is floor to ceiling, or to the top of the scan when there's no ceiling)
   const h = top - floorY;
   const floorX = [], floorZ = [], wallX = [], wallZ = [];
   for (let i = 0; i < n; i++) {
     const x = pts[3 * i], y = pts[3 * i + 1], z = pts[3 * i + 2];
     if (Math.abs(y - floorY) < 2 * ybin) { floorX.push(x); floorZ.push(z); }
-    else if (y > floorY + 0.15 * h && y < floorY + 0.85 * h) { wallX.push(x); wallZ.push(z); }
+    // Walls are cleanest above the furniture: use the upper half of the room.
+    else if (y > floorY + 0.5 * h && y < floorY + 0.9 * h) { wallX.push(x); wallZ.push(z); }
   }
   if (wallX.length < 200) return null;
 
@@ -200,7 +215,7 @@ export function detectRoom(allPts) {
   const corners = [toWorld(U.min, V.min), toWorld(U.max, V.min), toWorld(U.max, V.max), toWorld(U.min, V.max)];
 
   return {
-    angle, corners, floorY, ceilY,
+    angle, corners, floorY, ceilY, upsideDown,
     width: U.max - U.min, depth: V.max - V.min, height: ceilY === null ? null : ceilY - floorY,
     wallsFound: [U.minFound, U.maxFound, V.minFound, V.maxFound].filter(Boolean).length,
     points: n,

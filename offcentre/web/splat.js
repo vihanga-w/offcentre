@@ -29,6 +29,7 @@ let moveSpeed = 1; // metres per second for WASD, set from the scan's size when 
 const held = new Set(); // movement keys currently down
 let lastFrame = 0;
 let room = null; // detected room (world space), see roomdetect.js
+let orientationChecked = false; // auto-flip at most once per loaded scan
 let roomLines = null;
 
 // ---------- view switching ----------
@@ -129,6 +130,7 @@ async function load(file) {
     return;
   }
   $("scan-drop").hidden = true;
+  orientationChecked = false;
   fileKey = `offcentre-scan:${file.name}:${file.size}`;
   restore();
   frameCamera();
@@ -160,7 +162,9 @@ function applyFlip() {
   splat.updateMatrixWorld(true);
 }
 $("scan-flip").addEventListener("change", () => {
+  orientationChecked = true; // the user's choice overrides auto-detection
   applyFlip();
+  save();
   if (splat) { frameCamera(); update(); findRoom(); } // "up" changed, so the room must be re-found
 });
 
@@ -183,6 +187,19 @@ function findRoom() {
                e[2] * c.x + e[6] * c.y + e[10] * c.z + e[14]);
     });
     room = detectRoom(new Float32Array(pts));
+    // Exports differ on which way is up; the room itself tells us. Turn it over once if needed.
+    if (room?.upsideDown && !orientationChecked) {
+      orientationChecked = true;
+      $("scan-flip").checked = !$("scan-flip").checked;
+      applyFlip();
+      save();
+      frameCamera();
+      update();
+      status("The scan was upside down, so it's been turned over. Finding the room…");
+      findRoom();
+      return;
+    }
+    orientationChecked = true;
     drawRoom();
     if (room) frameToRoom();
     measure();
@@ -507,7 +524,7 @@ $("scan-apply").onclick = () => {
 
 function save() {
   if (!fileKey) return;
-  const data = { picks: {}, real: $("scan-real").value };
+  const data = { picks: {}, real: $("scan-real").value, flip: $("scan-flip").checked };
   for (const k of ORDER) if (picks[k]) data.picks[k] = picks[k].toArray();
   try { localStorage.setItem(fileKey, JSON.stringify(data)); } catch { /* storage unavailable */ }
 }
@@ -522,6 +539,11 @@ function restore() {
   if (data) {
     for (const [k, arr] of Object.entries(data.picks || {})) picks[k] = new THREE.Vector3().fromArray(arr);
     $("scan-real").value = data.real || "";
+    if (typeof data.flip === "boolean" && data.flip !== $("scan-flip").checked) {
+      $("scan-flip").checked = data.flip;
+      applyFlip();
+    }
+    orientationChecked = typeof data.flip === "boolean"; // a saved orientation wins
   } else {
     $("scan-real").value = "";
   }

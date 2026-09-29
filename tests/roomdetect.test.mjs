@@ -38,6 +38,7 @@ function angleErr(got, want) {
 let failed = 0;
 function check(name, spec, tol = 0.06) {
   const r = detectRoom(room(spec));
+  if (r.upsideDown) { failed++; console.log(`FAIL ${name}: upright room reported upside down`); }
   const dims = [r.width, r.depth].sort((x, y) => x - y), want = [spec.w, spec.d].sort((x, y) => x - y);
   const ok = r && angleErr(r.angle, spec.angleDeg) < 1 &&
     Math.abs(dims[0] - want[0]) < tol && Math.abs(dims[1] - want[1]) < tol &&
@@ -54,4 +55,13 @@ check("rotated 62 degrees, square-ish", { w: 4.2, d: 3.9, h: 2.4, angleDeg: 62 }
 check("one wall missing, no ceiling", { w: 5.0, d: 4.0, h: 2.6, angleDeg: 33, walls: [1, 0, 1, 1], ceiling: false }, 0.12);
 check("points seen through a window", { w: 5.5, d: 4.2, h: 2.5, angleDeg: 8, outside: 8000 });
 check("far background shell (as in real phone scans)", { w: 6.1, d: 4.4, h: 2.6, angleDeg: 21, shell: 15000 });
+// The same furnished room turned upside down must be recognised as such.
+{
+  const pts = room({ w: 5.2, d: 4.1, h: 2.4, angleDeg: 12 });
+  for (let i = 1; i < pts.length; i += 3) pts[i] = -pts[i];
+  const r = detectRoom(pts);
+  const ok = r && r.upsideDown === true;
+  if (!ok) failed++;
+  console.log(`${ok ? "ok  " : "FAIL"} upside-down scan detected: upsideDown=${r && r.upsideDown}`);
+}
 process.exit(failed ? 1 : 0);
