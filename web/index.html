@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offcentre</title>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+  "@sparkjsdev/spark": "https://cdn.jsdelivr.net/npm/@sparkjsdev/spark@2.2.0/dist/spark.module.js"
+} }
+</script>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1c1c1a; --muted: #6b6a65; --line: #e3e1db;
+    --accent: #2f6fdb; --accent-ink: #ffffff; --warn: #b8570f; --ok: #2d8a4e; --bad: #c23b3b;
+    --meter-bg: #ecebe6; --meter: #3d9a5f; --meter-hot: #d98a1c; --meter-clip: #c23b3b;
+    --radius: 12px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1f1f1d; --ink: #ecebe7; --muted: #9b9a94; --line: #34332f;
+      --accent: #5b8ff0; --accent-ink: #0d1117; --warn: #e39045; --ok: #5cc07f; --bad: #ef6b6b;
+      --meter-bg: #2b2a27; --meter: #4fb574;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  .conn { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
+  .dot.on { background: var(--ok); }
+  .route { color: var(--muted); font-size: 13px; margin: 4px 0 16px; }
+  .note { background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line));
+          border-radius: var(--radius); padding: 10px 14px; font-size: 14px; margin-bottom: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
+  .grid2 > .panel { margin-bottom: 0; }
+
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; flex-wrap: wrap; }
+  .seg button { border: 0; background: transparent; color: var(--ink); font: inherit; padding: 9px 16px; cursor: pointer; border-right: 1px solid var(--line); }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .ab { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .ab .seg button { padding: 12px 22px; font-size: 16px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+
+  .ctl { margin: 14px 0 4px; }
+  .ctl label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 14px; }
+  .ctl .val { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
+  .ctl input[type=number] { width: 78px; font: inherit; text-align: right; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .ctl small { color: var(--muted); font-size: 12px; min-width: 7ch; text-align: right; }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 8px 0 0; }
+  .dim { opacity: 0.45; }
+
+  .meter { height: 8px; background: var(--meter-bg); border-radius: 4px; overflow: hidden; margin-top: 4px; }
+  .meter > div { height: 100%; width: 0; background: var(--meter); transition: width 90ms linear; }
+  .meter > div.hot { background: var(--meter-hot); }
+  .meter > div.clip { background: var(--meter-clip); }
+  .mrow { display: grid; grid-template-columns: 34px 1fr 56px; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .mrow span:last-child { text-align: right; }
+
+  .calc { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+  .calc label { display: flex; flex-direction: column; font-size: 13px; color: var(--muted); gap: 4px; }
+  .calc input, .calc select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); width: 110px; }
+  .btn { font: inherit; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); cursor: pointer; font-weight: 600; }
+  .btn.ghost { background: transparent; color: var(--accent); }
+  .stats { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .stats b { color: var(--ink); font-weight: 600; }
+  /* room plan */
+  .room-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .room-head h2 { margin: 0; }
+  .room-opts { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+  .room-opts select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  #plan { width: 100%; height: auto; display: block; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; touch-action: none; user-select: none; }
+  #plan .grid-minor { stroke: var(--line); stroke-width: 1; }
+  #plan .grid-major { stroke: color-mix(in srgb, var(--muted) 45%, var(--line)); stroke-width: 1.4; }
+  #plan .axis-label { fill: var(--muted); font-size: 12px; }
+  #plan .ray { stroke-width: 2.4; }
+  #plan .ray.left { stroke: var(--accent); }
+  #plan .ray.right { stroke: var(--warn); }
+  #plan .span { stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 6 5; }
+  #plan .dim-label { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+  #plan .dim-label.left { fill: var(--accent); }
+  #plan .dim-label.right { fill: var(--warn); }
+  #plan .dim-label.span { fill: var(--muted); stroke-dasharray: none; stroke: var(--bg); stroke-width: 4px; }
+  #plan .coord { fill: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+  #plan .name { fill: var(--ink); font-size: 13px; font-weight: 600; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+  #plan .handle { cursor: grab; }
+  #plan .handle:active { cursor: grabbing; }
+  #plan .hit { fill: transparent; }
+  #plan .handle:hover .halo, #plan .handle.dragging .halo { opacity: 1; }
+  #plan .halo { fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0; }
+  #plan .pod { fill: var(--ink); }
+  #plan .seat { fill: var(--ok); }
+  .coords { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .coords th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 6px; }
+  .coords td { padding: 4px 6px; border-top: 1px solid var(--line); }
+  .coords input { width: 76px; font: inherit; text-align: right; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .coords .num { text-align: right; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .resync { margin-left: 6px; }
+  /* 3D scan */
+  #scan-view[hidden], #plan-view[hidden], .drop[hidden], .scan-status[hidden] { display: none; }
+  .scan-stage { position: relative; height: 480px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #0c0c0c; }
+  .scan-stage canvas { display: block; width: 100%; height: 100%; }
+  .drop { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+          color: #ddd; text-align: center; padding: 24px; border: 2px dashed transparent; border-radius: 10px; }
+  .drop.over { border-color: var(--accent); background: rgba(91, 143, 240, 0.12); }
+  .drop small { color: #999; max-width: 46ch; }
+  .scan-status { position: absolute; left: 10px; bottom: 10px; color: #ddd; font-size: 12.5px; background: rgba(0,0,0,0.55); padding: 4px 8px; border-radius: 6px; pointer-events: none; }
+  .scan-tools { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 10px 0; font-size: 14px; }
+  .scan-tools input[type=number] { width: 80px; font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .pick-left[aria-pressed="true"] { background: var(--accent) !important; }
+  .pick-right[aria-pressed="true"] { background: var(--warn) !important; color: #111 !important; }
+  .pick-seat[aria-pressed="true"] { background: var(--ok) !important; color: #111 !important; }
+  .qrow { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .qrow:first-of-type { border-top: 0; }
+  .badge { font-size: 12.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+  .badge.good { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .badge.ok { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .badge.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .badge.dim { background: var(--line); color: var(--muted); }
+  .err { color: var(--bad); font-size: 13px; min-height: 1.2em; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Offcentre</h1>
+    <div class="conn"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
+  </header>
+  <div class="route" id="route"></div>
+  <div class="note" id="airplay-note" hidden>
+    Changes apply instantly, but AirPlay buffers 2 seconds, so you hear them ~2 s later. macOS fixes that buffer; it can't be shortened from a Mac.
+    Move a control, then wait before judging. Video apps already allow for those 2 s; only
+    this script's own delay (see Latency below) can put lip-sync out.
+  </div>
+
+  <section class="panel">
+    <h2>Compare</h2>
+    <div class="ab">
+      <div class="seg" role="group" aria-label="Correction">
+        <button id="ab-on" aria-pressed="true">Correction on</button>
+        <button id="ab-off" aria-pressed="false">Bypass</button>
+      </div>
+      <span class="hint" style="margin:0">Press <kbd>B</kbd> to toggle</span>
+    </div>
+  </section>
+
+  <section class="panel" id="room">
+    <div class="room-head">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <h2>Room (to scale)</h2>
+        <div class="seg" role="group" aria-label="Room view">
+          <button id="view-plan" aria-pressed="true">Plan</button>
+          <button id="view-scan" aria-pressed="false">3D scan</button>
+        </div>
+      </div>
+      <div class="room-opts">
+        <label><input type="checkbox" id="follow_room"> Set delay &amp; level from room</label>
+        <label>Level cut
+          <select id="level_law">
+            <option value="1">Full (inverse distance)</option>
+            <option value="0.75">¾</option>
+            <option value="0.5">Half (roomy)</option>
+            <option value="0">None (delay only)</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div id="plan-view">
+    <svg id="plan" role="img" aria-label="Room plan with HomePods and seat"></svg>
+    <p class="hint">Drag the HomePods and your seat to match the room. The grid is in metres: x runs
+      along the speaker wall from the left HomePod, y runs into the room. Enter measured values below
+      for precision.</p>
+    <table class="coords">
+      <thead><tr><th></th><th class="num">x (m)</th><th class="num">y (m)</th><th class="num">to seat</th><th class="num">Δx</th><th class="num">Δy</th></tr></thead>
+      <tbody id="coords"></tbody>
+    </table>
+    <p class="hint" id="room-summary"></p>
+    </div>
+
+    <div id="scan-view" hidden>
+      <div class="scan-tools">
+        <span>Click the scan to place:</span>
+        <div class="seg" role="group" aria-label="Marker to place">
+          <button class="pick-left" data-pick="left" aria-pressed="true">Left HomePod</button>
+          <button class="pick-right" data-pick="right" aria-pressed="false">Right HomePod</button>
+          <button class="pick-seat" data-pick="seat" aria-pressed="false">Your head</button>
+        </div>
+        <label><input type="checkbox" id="scan-flip" checked> Flip upright</label>
+        <button class="btn ghost" id="scan-open">Open file…</button>
+        <input type="file" id="scan-file" accept=".ply,.spz,.splat,.ksplat" hidden>
+      </div>
+      <div class="scan-stage" id="scan-stage">
+        <div class="drop" id="scan-drop">
+          <b>Drop a room scan here</b>
+          <small>.ply, .spz or .splat from Scaniverse, Polycam or Luma. It stays in this browser; nothing is uploaded.</small>
+        </div>
+        <div class="scan-status" id="scan-status" hidden></div>
+      </div>
+      <div class="scan-tools">
+        <label>Real distance between the HomePods
+          <input type="number" id="scan-real" step="0.01" min="0" placeholder="optional"> m</label>
+        <span class="hint" style="margin:0" id="scan-scale"></span>
+      </div>
+      <p class="hint" id="scan-dist"></p>
+      <button class="btn" id="scan-apply" disabled>Use these positions</button>
+      <p class="hint">Drag to orbit, scroll to zoom, right-drag to pan. Place each marker by clicking where it
+        sits in the scan (for yourself, where your head is when seated). “Use these positions” copies them
+        to the plan, measured along the floor.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Speaker check</h2>
+    <div class="seg" role="group" aria-label="Speaker check">
+      <button data-solo="none" aria-pressed="true">Both</button>
+      <button data-solo="left" aria-pressed="false">Left only</button>
+      <button data-solo="right" aria-pressed="false">Right only</button>
+    </div>
+    <p class="hint">
+      With <b>Left only</b>, sound should come only from the left HomePod. If both play, they aren't
+      receiving separate channels (not a stereo pair, or the Apple TV is downmixing), and no
+      per-channel correction can work until that's fixed.
+    </p>
+  </section>
+
+  <div class="grid2">
+    <section class="panel" id="ch-left"></section>
+    <section class="panel" id="ch-right"></section>
+  </div>
+
+  <section class="panel" style="margin-top:16px">
+    <h2>Master</h2>
+    <div class="ctl">
+      <label for="master_db">Volume
+        <span class="val"><input type="number" id="master_db-num" step="0.5"> <small>dB</small></span>
+      </label>
+      <input type="range" id="master_db" min="-40" max="0" step="0.5">
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Latency</h2>
+    <div class="ctl" id="buffer-ctl">
+      <label for="buffer_ms">Safety buffer
+        <span class="val"><input type="number" id="buffer_ms-num" step="5"> <small>ms</small></span>
+      </label>
+      <input type="range" id="buffer_ms" min="10" max="300" step="5">
+    </div>
+    <p class="hint" id="latency"></p>
+    <p class="hint" id="buffer-hint">Lower is tighter lip-sync. If underruns start climbing (you hear clicks or
+      gaps), raise it again. Each change causes one small skip.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Audio quality</h2>
+    <div id="q-rows"></div>
+    <label class="hint" style="display:block;margin-top:10px">
+      <input type="checkbox" id="dither"> Dither channels whose level is changed
+    </label>
+    <p class="hint" id="q-notes"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Stream</h2>
+    <div class="stats" id="stats"></div>
+    <div class="err" id="err"></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const SPEED = 343;
+  let state = null;
+  let limits = { max_delay_ms: 50, min_gain_db: -60 };
+  const busy = new Set();       // controls being dragged/edited: don't overwrite from polls
+  let pending = {};             // changes not yet sent
+  let sendTimer = null;
+  let inflight = false;
+
+  // ---------- channel panels ----------
+  for (const side of ["left", "right"]) {
+    const Side = side[0].toUpperCase() + side.slice(1);
+    $("ch-" + side).innerHTML = `
+      <h2>${Side} speaker</h2>
+      <div class="ctl">
+        <label for="${side}_delay_ms">Delay
+          <span class="val"><input type="number" id="${side}_delay_ms-num" step="0.01"> <small>ms</small></span>
+        </label>
+        <input type="range" id="${side}_delay_ms" min="0" max="50" step="0.01">
+        <div class="hint" style="margin-top:2px" id="${side}-samples"></div>
+      </div>
+      <div class="ctl">
+        <label for="${side}_gain_db">Level
+          <span class="val"><input type="number" id="${side}_gain_db-num" step="0.5"> <small>dB</small></span>
+        </label>
+        <input type="range" id="${side}_gain_db" min="-30" max="0" step="0.5">
+      </div>
+      <div class="ctl">
+        <div class="mrow"><span>in</span><div class="meter"><div id="${side}-min"></div></div><span id="${side}-vin"></span></div>
+        <div class="mrow"><span>out</span><div class="meter"><div id="${side}-mout"></div></div><span id="${side}-vout"></span></div>
+      </div>`;
+  }
+
+  const numeric = ["left_delay_ms", "right_delay_ms", "left_gain_db", "right_gain_db", "master_db", "buffer_ms"];
+  const onRelease = new Set();  // every slider applies while dragging
+  for (const key of numeric) {
+    const range = $(key), num = $(key + "-num");
+    const start = () => busy.add(key), end = () => setTimeout(() => busy.delete(key), 400);
+    range.addEventListener("pointerdown", start);
+    range.addEventListener("pointerup", end);
+    range.addEventListener("input", () => {
+      busy.add(key); num.value = range.value;
+      if (!onRelease.has(key)) queue(manual(key, +range.value));
+    });
+    range.addEventListener("change", () => {
+      if (onRelease.has(key)) queue({ [key]: +range.value }, true);
+      end();
+    });
+    num.addEventListener("focus", start);
+    num.addEventListener("blur", end);
+    num.addEventListener("change", () => {
+      if (num.value === "" || isNaN(+num.value)) return;
+      range.value = num.value; queue(manual(key, +num.value));
+    });
+  }
+
+  // Moving a delay/level control by hand takes over from the room plan.
+  const manual = (key, value) =>
+    /_(delay_ms|gain_db)$/.test(key) ? { [key]: value, follow_room: false } : { [key]: value };
+
+  // ---------- A/B and solo ----------
+  const setBypass = (b) => queue({ bypass: b }, true);
+  $("ab-on").onclick = () => setBypass(false);
+  $("ab-off").onclick = () => setBypass(true);
+  document.addEventListener("keydown", (e) => {
+    if ((e.key === "b" || e.key === "B") && !(e.target instanceof HTMLInputElement) && state) {
+      setBypass(!state.settings.bypass);
+    }
+  });
+  document.querySelectorAll("[data-solo]").forEach((btn) => {
+    btn.onclick = () => queue({ solo: btn.dataset.solo }, true);
+  });
+
+  $("dither").addEventListener("change", (e) => queue({ dither: e.target.checked }, true));
+
+  function renderQuality() {
+    const q = state.quality;
+    if (!q) return;
+    const out = q.output;
+    const fmt = out
+      ? `${out.bits}-bit ${out.integer ? "integer" : "float"}, ${(out.rate / 1000).toFixed(1)} kHz`
+      : "unknown";
+    const isAirplay = state.airplay && out && out.integer && out.bits === 16 && out.rate === 44100;
+    const badge = (status) => {
+      const cls = status === "bit-perfect" ? "good" : status.startsWith("level changed, dithered") ? "ok"
+        : status === "muted" ? "dim" : "warn";
+      return `<span class="badge ${cls}">${status}</span>`;
+    };
+    const rows = [
+      `<div class="qrow"><span>Output format</span><span>${fmt}${isAirplay ? " · AirPlay ALAC, CD-quality lossless" : ""}</span></div>`,
+      `<div class="qrow"><span>Path</span><span class="badge ${q.mode === "direct" ? "good" : "warn"}">${q.mode === "direct" ? "direct, no resampling or slips" : "buffered, drift slips"}</span></div>`,
+    ];
+    ["Left", "Right"].forEach((name, i) => {
+      rows.push(`<div class="qrow"><span>${name} channel</span>${badge(q.channels[i].status)}</div>`);
+    });
+    $("q-rows").innerHTML = rows.join("");
+    const d = $("dither");
+    d.disabled = !q.dither_available;
+    if (document.activeElement !== d) d.checked = state.settings.dither;
+    const notes = [];
+    if (state.settings.master_db !== 0 && !state.settings.bypass) {
+      notes.push("Master volume below 0 dB changes both channels; use the HomePods' own volume instead to keep the untouched channel bit-perfect.");
+    }
+    if (!q.dither_available) notes.push("Dither is only needed for integer outputs; this output's format is float or unknown.");
+    if (isAirplay) notes.push("AirPlay from a Mac is 16-bit/44.1 kHz. Hi-res sources are converted to that by macOS before this script sees them, so hi-res isn't possible on this route.");
+    notes.push("A delay moves whole samples, so it never alters them. Only a level change needs requantising, and dither turns that error into faint steady hiss (around −98 dB) instead of distortion.");
+    $("q-notes").textContent = notes.join(" ");
+  }
+
+  // ---------- networking ----------
+  function queue(changes, immediate) {
+    Object.assign(pending, changes);
+    if (state) { Object.assign(state.settings, changes); render(true); }
+    clearTimeout(sendTimer);
+    sendTimer = setTimeout(flush, immediate ? 0 : 60);
+  }
+  async function flush() {
+    if (inflight) { sendTimer = setTimeout(flush, 30); return; }
+    const body = pending; pending = {};
+    if (!Object.keys(body).length) return;
+    inflight = true;
+    try {
+      const r = await fetch("/api/settings", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || r.statusText);
+      $("err").textContent = "";
+      apply(data, true);
+    } catch (e) {
+      $("err").textContent = "Could not apply change: " + e.message;
+    } finally { inflight = false; }
+  }
+  async function poll() {
+    try {
+      const r = await fetch("/api/state");
+      if (!r.ok) throw new Error(r.statusText);
+      apply(await r.json(), false);
+      $("dot").classList.add("on"); $("conn").textContent = "live";
+    } catch {
+      $("dot").classList.remove("on"); $("conn").textContent = "not connected (is the script running?)";
+    }
+    setTimeout(poll, 200);
+  }
+
+  function apply(data, fromPost) {
+    const keepLocal = Object.keys(pending).length > 0 || inflight && !fromPost;
+    const local = state && state.settings;
+    state = data;
+    limits = data.limits;
+    if (keepLocal && local) state.settings = local;
+    render(false);
+  }
+
+  // ---------- rendering ----------
+  const fmtDb = (v) => (v <= -99 ? "−∞" : v.toFixed(1)) + " dB";
+  function meter(el, label, db) {
+    const pct = db <= -60 ? 0 : Math.min(100, (db + 60) / 60 * 100);
+    el.style.width = pct + "%";
+    el.className = db >= -0.5 ? "clip" : db >= -6 ? "hot" : "";
+    label.textContent = fmtDb(db);
+  }
+  const listeners = [];
+  window.sb = {
+    get state() { return state; },
+    queue,
+    onRender(fn) { listeners.push(fn); if (state) fn(state); },
+    isBusy: (key) => busy.has(key),
+    setBusy(key, on) { on ? busy.add(key) : busy.delete(key); },
+  };
+
+  function render(settingsOnly) {
+    if (!state) return;
+    for (const fn of listeners) fn(state, settingsOnly);
+    const s = state.settings;
+    for (const key of numeric) {
+      if (busy.has(key)) continue;
+      $(key).value = s[key];
+      $(key + "-num").value = key.includes("delay") ? (+s[key]).toFixed(2)
+        : key === "buffer_ms" ? (+s[key]).toFixed(0) : (+s[key]).toFixed(1);
+    }
+    $("ab-on").setAttribute("aria-pressed", String(!s.bypass));
+    $("ab-off").setAttribute("aria-pressed", String(s.bypass));
+    document.querySelectorAll("[data-solo]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.solo === s.solo)));
+    ["left", "right"].forEach((side, i) => {
+      $("ch-" + side).classList.toggle("dim", s.bypass || (s.solo !== "none" && s.solo !== side));
+      const samples = Math.round(s[side + "_delay_ms"] * state.samplerate / 1000);
+      const cm = s[side + "_delay_ms"] / 1000 * SPEED * 100;
+      $(side + "-samples").textContent = `${samples} samples @ ${state.samplerate} Hz · ${cm.toFixed(0)} cm of path`;
+      if (!settingsOnly) {
+        meter($(side + "-min"), $(side + "-vin"), state.meters.in[i]);
+        meter($(side + "-mout"), $(side + "-vout"), state.meters.out[i]);
+      }
+    });
+    renderQuality();
+    if (settingsOnly) return;
+    $("route").textContent = `${state.devices.input} → ${state.devices.output}`;
+    $("airplay-note").hidden = !state.airplay;
+    const lat = state.latency;
+    const direct = lat.mode === "direct";
+    $("buffer-ctl").hidden = direct;
+    $("buffer-hint").hidden = direct;
+    $("latency").innerHTML = (direct ? "Direct mode: capture and playback share one clock, no buffer needed. " : "") +
+      `This script adds <b>~${lat.added_ms} ms</b>` +
+      (lat.output_ms != null ? ` on top of the output's ${lat.output_ms} ms` +
+        (state.airplay ? " (AirPlay's own delay, which apps compensate for)" : "") : "") +
+      (direct ? "." : `. Underruns so far: <b>${state.stats.underruns}</b>.`);
+    const st = state.stats;
+    $("stats").innerHTML =
+      `<span>buffer <b>${st.buffer}</b> frames</span><span>drift slips <b>${st.slips}</b></span>` +
+      `<span>underruns <b>${st.underruns}</b></span><span>dropped <b>${st.dropped}</b></span>` +
+      `<span>device xruns <b>${st.xruns}</b></span>`;
+  }
+
+  poll();
+})();
+</script>
+<script type="module" src="room.js"></script>
+<script type="module" src="splat.js"></script>
+</body>
+</html>
