@@ -2,7 +2,7 @@
 //
 // Creates a Core Audio process tap (macOS 14.2+) over every process except the ones passed with
 // --exclude-pid, set to mute the original sound while the tap is being read, and wraps it in a
-// public aggregate device that other processes (PortAudio in offcentre.py) can open as a
+// public aggregate device that other processes (PortAudio in offcentre) can open as a
 // 2-channel input. The aggregate is clocked by the current default output device.
 //
 // Prints "READY <device name> ... bits=N int|float rate=R" on stdout once the device exists, the

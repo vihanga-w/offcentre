@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "offcentre"
+dynamic = ["version"]
+description = "Fix the stereo image when you can't sit in the middle: real-time delay and level correction for macOS"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+authors = [{ name = "Vihanga Weerasinghe" }]
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "sounddevice>=0.4.6"]
+keywords = ["audio", "stereo", "airplay", "homepod", "macos", "core-audio", "haas-effect"]
+classifiers = [
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/vihanga-w/offcentre"
+Issues = "https://github.com/vihanga-w/offcentre/issues"
+
+[project.scripts]
+offcentre = "offcentre:main"
+
+[tool.setuptools]
+packages = ["offcentre"]
+
+[tool.setuptools.dynamic]
+version = { attr = "offcentre.__version__" }
+
+[tool.setuptools.package-data]
+offcentre = ["web/*", "macos/*.swift"]

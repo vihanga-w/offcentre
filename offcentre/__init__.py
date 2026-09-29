@@ -28,7 +28,7 @@ lock-free FIFO. The input callback does the DSP (delay line + gain) and pushes i
 the output callback pulls from it and slips a single frame now and then to absorb clock drift,
 which is inaudible, instead of letting the FIFO run dry and click every few minutes.
 
-Run `python offcentre.py --help` for options.
+Run `offcentre --help` (or `python -m offcentre --help`) for options.
 """
 
 from __future__ import annotations
@@ -53,10 +53,20 @@ from pathlib import Path
 
 import numpy as np
 
+__version__ = "0.1.0"
+
+# sounddevice finds PortAudio with ctypes, which doesn't search Homebrew's lib directories.
+# Its pip wheels bundle PortAudio, but a from-source install (Homebrew) uses the system one.
+if sys.platform == "darwin":
+    _fallback = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+    _extra = ":".join(p for p in ("/opt/homebrew/lib", "/usr/local/lib") if p not in _fallback)
+    if _extra:
+        os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(filter(None, (_fallback, _extra)))
+
 try:
     import sounddevice as sd
 except ImportError:  # pragma: no cover - environment problem, not a code path
-    sys.exit("sounddevice is not installed. Run:  pip install -r requirements.txt")
+    sys.exit("sounddevice is not installed. Reinstall offcentre, or run:  pip install sounddevice")
 except OSError as exc:  # pragma: no cover - PortAudio shared library missing
     sys.exit(f"sounddevice could not load PortAudio ({exc}). Try:  brew install portaudio")
 
@@ -72,15 +82,33 @@ OUTPUT_BLOCKLIST = ("blackhole", "offcentre tap", "zoomaudiodevice", "microsoft 
 OUTPUT_PREFERENCES = ("airplay", "homepod")
 
 HERE = Path(__file__).resolve().parent
+# Per-user state lives outside the install, which may be read-only (Homebrew) or replaced on
+# upgrade. OFFCENTRE_HOME overrides it (tests, multiple setups).
+STATE_DIR = Path(os.environ.get("OFFCENTRE_HOME")
+                 or Path.home() / "Library" / "Application Support" / "offcentre")
 TAP_SOURCE = HERE / "macos" / "system_audio_tap.swift"
-TAP_BINARY = HERE / ".build" / "system-audio-tap"
+PREBUILT_TAP = HERE / "bin" / "system-audio-tap"  # compiled at install time by the Homebrew formula
+TAP_BINARY = STATE_DIR / "bin" / "system-audio-tap"  # otherwise compiled here on first run
 TAP_DEVICE_NAME = "Offcentre Tap"
 WEB_DIR = HERE / "web"
 WEB_PAGE = WEB_DIR / "index.html"
 STATIC_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
                 ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml"}
-SETTINGS_FILE = HERE / "settings.json"
-LOCK_FILE = HERE / ".build" / "instance.lock"
+SETTINGS_FILE = STATE_DIR / "settings.json"
+LOCK_FILE = STATE_DIR / "instance.lock"
+LEGACY_SETTINGS = HERE.parent / "settings.json"  # where a git checkout kept it before 0.1.0
+
+
+def migrate_legacy_settings() -> None:
+    """Copy settings saved by pre-0.1.0 checkouts (next to the script) into STATE_DIR once."""
+    if SETTINGS_FILE.exists() or not LEGACY_SETTINGS.is_file():
+        return
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        SETTINGS_FILE.write_text(LEGACY_SETTINGS.read_text())
+        print(f"Moved saved settings to {SETTINGS_FILE}")
+    except OSError:
+        pass
 
 
 def acquire_instance_lock(port: int):
@@ -89,7 +117,7 @@ def acquire_instance_lock(port: int):
     Two instances would fight over the one tap device (the helper replaces a leftover device
     with the same UID), so a second launch must stop before touching anything.
     """
-    LOCK_FILE.parent.mkdir(exist_ok=True)
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     handle = open(LOCK_FILE, "a+")
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -630,10 +658,12 @@ class SystemTap:
 
     @staticmethod
     def build() -> Path:
-        if TAP_BINARY.exists() and TAP_BINARY.stat().st_mtime >= TAP_SOURCE.stat().st_mtime:
-            return TAP_BINARY
+        source_mtime = TAP_SOURCE.stat().st_mtime
+        for candidate in (PREBUILT_TAP, TAP_BINARY):
+            if candidate.exists() and candidate.stat().st_mtime >= source_mtime:
+                return candidate
         print("Compiling the system audio tap helper (one-off)...")
-        TAP_BINARY.parent.mkdir(exist_ok=True)
+        TAP_BINARY.parent.mkdir(parents=True, exist_ok=True)
         try:
             result = subprocess.run(
                 ["swiftc", "-O", str(TAP_SOURCE), "-o", str(TAP_BINARY)],
@@ -1066,6 +1096,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--no-prompt", action="store_true", help="fail instead of asking for devices")
     p.add_argument("--list-devices", action="store_true", help="list audio devices and exit")
     p.add_argument("--dry-run", action="store_true", help="print the correction and exit")
+    p.add_argument("--version", action="version", version=f"offcentre {__version__}")
     p.add_argument("--port", type=int, default=8765, help="live control page port (default 8765)")
     p.add_argument("--no-web", action="store_true", help="don't serve the live control page")
     p.add_argument("--no-browser", action="store_true", help="don't open the control page")
@@ -1093,6 +1124,7 @@ def main(argv: list[str] | None = None) -> int:
     for sig in (signal.SIGHUP, signal.SIGTERM):
         signal.signal(sig, _interrupt)
     near_channel = LEFT if args.near_side == "left" else RIGHT
+    migrate_legacy_settings()
     tap = SystemTap()
     lock = None
     try:

@@ -6,7 +6,7 @@ Writes:
   assets/banner-light.svg, assets/banner-dark.svg   README banner (GitHub light / dark)
   assets/social-preview.svg                         1280x640 source for the repo's social image
   assets/mark.svg                                   the logo mark (avatar)
-  web/favicon.svg                                   control-page icon, follows the colour scheme
+  offcentre/web/favicon.svg                         control-page icon, follows the colour scheme
 Render social-preview.svg to PNG with render.sh (headless Chrome).
 """
 import math
@@ -133,5 +133,5 @@ if __name__ == "__main__":
         (ASSETS / f"banner-{theme}.svg").write_text(banner(t, theme))
     (ASSETS / "social-preview.svg").write_text(social(THEMES["light"]))
     (ASSETS / "mark.svg").write_text(mark_svg(THEMES["light"]))
-    (ROOT / "web" / "favicon.svg").write_text(favicon())
-    print("wrote banner-light.svg, banner-dark.svg, social-preview.svg, mark.svg, web/favicon.svg")
+    (ROOT / "offcentre" / "web" / "favicon.svg").write_text(favicon())
+    print("wrote banner-light.svg, banner-dark.svg, social-preview.svg, mark.svg, offcentre/web/favicon.svg")

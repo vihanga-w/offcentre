@@ -47,22 +47,36 @@ The near side is turned down rather than the far side turned up, so the output c
 ## Requirements
 
 - macOS 14.2 or later (for the system audio tap)
-- Python 3.10+
-- Xcode command line tools, for compiling the small Swift helper on first run: `xcode-select --install`
+- Xcode command line tools, to compile the small Swift helper: `xcode-select --install`
 
-## Setup
+## Install
+
+**Homebrew**
 
 ```bash
-git clone https://github.com/vihanga-w/offcentre.git
-cd offcentre
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+brew install vihanga-w/offcentre/offcentre
 ```
+
+**pipx** (Python 3.10+)
+
+```bash
+pipx install git+https://github.com/vihanga-w/offcentre.git
+```
+
+**From source**
+
+```bash
+git clone https://github.com/vihanga-w/offcentre.git && cd offcentre
+python3 -m venv .venv && .venv/bin/pip install -e .
+```
+
+## Use
 
 1. **HomePods only:** make them a stereo pair in the Home app (HomePod → Settings → Create Stereo Pair). If they aren't paired, each one plays the full mix and no per-channel correction can work.
 2. **Select your speakers as the system output** (Control Center → Sound, or System Settings → Sound → Output). Choose the speakers themselves, not a Multi-Output Device.
 3. **Run it:**
    ```bash
-   .venv/bin/python offcentre.py --near 1 --far 4 --near-side left
+   offcentre --near 1 --far 4 --near-side left
    ```
    Use your own distances. The control page opens at http://127.0.0.1:8765.
 
@@ -78,7 +92,7 @@ When offcentre stops, including if it crashes, the tap is removed and normal aud
 - **Per-speaker delay and level** for fine-tuning by ear. Moving these hands control back from the room plan.
 - **Audio quality:** output format, and whether each channel is bit-perfect, dithered or muted.
 
-Settings are saved to `settings.json` and restored on the next run (`--reset` starts from the command-line distances). The page only listens on localhost and rejects cross-site requests.
+Settings are saved to `~/Library/Application Support/offcentre/settings.json` and restored on the next run (`--reset` starts from the command-line distances). The page only listens on localhost and rejects cross-site requests.
 
 ### 3D room scan
 
@@ -127,7 +141,7 @@ The 3D view uses [Spark](https://sparkjs.dev) and three.js, loaded from jsDelivr
 ## Development
 
 ```bash
-.venv/bin/pip install pytest
+.venv/bin/pip install -e ".[test]"
 .venv/bin/python -m pytest -q
 ```
 
@@ -138,6 +152,6 @@ python3 assets/brand/build.py      # SVGs and the favicon
 sh assets/brand/render.sh          # social-preview.png, via headless Chrome
 ```
 
-## License
+## Licence
 
-MIT
+MIT, see [LICENSE](LICENSE). Third-party software offcentre relies on, and its licences, is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

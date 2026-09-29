@@ -2,5 +2,9 @@
 __pycache__/
 .pytest_cache/
 .DS_Store
+*.egg-info/
+build/
+dist/
+# pre-0.1.0 checkouts kept state here; it now lives in ~/Library/Application Support/offcentre
 .build/
 settings.json
