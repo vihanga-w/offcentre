@@ -83,6 +83,12 @@ function init() {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.enableZoom = false; // the wheel moves the camera instead, see onWheel
+    // Left-drag grabs the scene and pans it with the mouse (in the screen plane, so it tracks
+    // the cursor); right-drag looks around; middle-drag zooms. A click without a drag still
+    // places or selects a marker.
+    controls.screenSpacePanning = true;
+    controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+    controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
     renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
     initGizmo();
     new ResizeObserver(resize).observe(stage);
