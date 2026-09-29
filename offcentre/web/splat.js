@@ -82,6 +82,8 @@ function init() {
     scene.add(new SparkRenderer({ renderer }));
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    controls.enableZoom = false; // the wheel moves the camera instead, see onWheel
+    renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
     initGizmo();
     new ResizeObserver(resize).observe(stage);
     wirePicking();
@@ -279,25 +281,52 @@ window.addEventListener("keyup", (e) => {
 });
 window.addEventListener("blur", () => held.clear());
 
-function walk(dt) {
-  if (!dt || !held.size || !camera) return;
+// Move the camera (and the orbit target with it) by metres forward, right and up, where
+// forward and right are level with the floor, like walking.
+function moveBy(forwardM, rightM, upM) {
   const forward = new THREE.Vector3();
   camera.getWorldDirection(forward);
   forward.y = 0;
   if (forward.lengthSq() < 1e-8) forward.set(0, 0, -1).applyQuaternion(camera.quaternion).setY(0);
   forward.normalize();
   const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-  const move = new THREE.Vector3();
-  if (held.has("w")) move.add(forward);
-  if (held.has("s")) move.sub(forward);
-  if (held.has("d")) move.add(right);
-  if (held.has("a")) move.sub(right);
-  if (held.has("e")) move.y += 1;
-  if (held.has("q")) move.y -= 1;
-  if (!move.lengthSq()) return;
-  move.normalize().multiplyScalar(moveSpeed * dt * (held.has("shift") ? 3 : 1));
+  const move = forward.multiplyScalar(forwardM).add(right.multiplyScalar(rightM));
+  move.y += upM;
   camera.position.add(move);
   controls.target.add(move);
+}
+
+function walk(dt) {
+  if (!dt || !held.size || !camera) return;
+  let f = 0, r = 0, u = 0;
+  if (held.has("w")) f += 1;
+  if (held.has("s")) f -= 1;
+  if (held.has("d")) r += 1;
+  if (held.has("a")) r -= 1;
+  if (held.has("e")) u += 1;
+  if (held.has("q")) u -= 1;
+  const len = Math.hypot(f, r, u);
+  if (!len) return;
+  const step = moveSpeed * dt * (held.has("shift") ? 3 : 1) / len;
+  moveBy(f * step, r * step, u * step);
+}
+
+// Scrolling moves through the scene instead of scrolling the page: swipe up/down to go
+// forward/back, left/right to step sideways; pinch (which browsers send as ctrl+wheel) zooms
+// toward the orbit point.
+function onWheel(e) {
+  e.preventDefault();
+  if (!splat) return;
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1; // lines/pages to pixels
+  const dx = e.deltaX * unit, dy = e.deltaY * unit;
+  if (e.ctrlKey) {
+    const offset = camera.position.clone().sub(controls.target);
+    const dist = Math.max(offset.length() * Math.exp(dy * 0.01), 0.05);
+    camera.position.copy(controls.target).add(offset.setLength(dist));
+    return;
+  }
+  const perPixel = moveSpeed * 0.004 * (e.shiftKey ? 3 : 1); // metres per scrolled pixel
+  moveBy(-dy * perPixel, dx * perPixel, 0);
 }
 
 // ---------- drop / open ----------
