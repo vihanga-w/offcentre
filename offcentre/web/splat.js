@@ -83,16 +83,16 @@ function init() {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.enableZoom = false; // the wheel moves the camera instead, see onWheel
-    // Left-drag grabs the scene and pans it with the mouse (in the screen plane, so it tracks
-    // the cursor); right-drag looks around; middle-drag zooms. A click without a drag still
+    // Left-drag (or one finger) turns the camera where it stands, see wireLook; right-drag
+    // orbits the point you're looking at; middle-drag zooms. A click without a drag still
     // places or selects a marker.
-    controls.screenSpacePanning = true;
-    controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
-    controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+    controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+    controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE };
     renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
     initGizmo();
     new ResizeObserver(resize).observe(stage);
     wirePicking();
+    wireLook();
     status("");
   })();
   return initPromise;
@@ -363,6 +363,35 @@ function setCurrent(key) {
   if (splat) status(`Click to place the ${MARKERS[key].name.toLowerCase()}`);
 }
 document.querySelectorAll("[data-pick]").forEach((b) => (b.onclick = () => setCurrent(b.dataset.pick)));
+
+// ---------- look around ----------
+
+// Drag to turn the camera in place, like Street View: the scene moves with the pointer, and the
+// turn rate matches the field of view so the point you grabbed stays under the cursor. The orbit
+// target is kept straight ahead at the same distance, so right-drag orbiting carries on from here.
+function wireLook() {
+  const canvas = renderer.domElement;
+  let last = null;
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || gizmo?.axis) return; // other buttons belong to OrbitControls; handles to the gizmo
+    last = [e.clientX, e.clientY];
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!last || gizmo?.dragging) return;
+    const dx = e.clientX - last[0], dy = e.clientY - last[1];
+    last = [e.clientX, e.clientY];
+    const perPixel = THREE.MathUtils.degToRad(camera.fov) / canvas.clientHeight;
+    const offset = controls.target.clone().sub(camera.position);
+    const sph = new THREE.Spherical().setFromVector3(offset);
+    sph.theta += dx * perPixel; // drag right: turn left, so the scene follows the pointer
+    sph.phi = THREE.MathUtils.clamp(sph.phi - dy * perPixel, 0.05, Math.PI - 0.05); // drag down: look up
+    controls.target.copy(camera.position).add(new THREE.Vector3().setFromSpherical(sph));
+  });
+  const end = () => { last = null; };
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
+}
 
 // ---------- X/Y/Z move handles ----------
 
