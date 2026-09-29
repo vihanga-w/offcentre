@@ -99,8 +99,9 @@ Settings are saved to `~/Library/Application Support/offcentre/settings.json` an
 1. Scan the room with a phone app that exports Gaussian splats, such as **Scaniverse** (free) in *Splat* mode. Walk slowly so both speakers and your seat are seen from several angles.
 2. Export as **PLY** or **SPZ** and move the file to the Mac.
 3. In **Room → 3D scan**, drop the file in. It never leaves the browser.
-4. Click the left speaker, the right speaker, and where your head is when seated. Optionally enter the tape-measured speaker spacing to correct the scale. Scans from iPhones with LiDAR are usually metric already.
-5. **Use these positions** copies the layout to the plan, measured along the floor.
+4. offcentre finds the room itself: floor, ceiling and walls (outlined in the view), and puts you inside it at eye height. Walk around with **W A S D** (**Q**/**E** down/up, **Shift** faster).
+5. Click the left speaker, the right speaker, and where your head is when seated. Click a marker to get **X/Y/Z arrows** for fine adjustment. Optionally enter the tape-measured speaker spacing to correct the scale. Scans from iPhones with LiDAR are usually metric already.
+6. **Use these positions** copies the layout and the room's walls to the plan, measured along the floor.
 
 The 3D view uses [Spark](https://sparkjs.dev) and three.js, loaded from jsDelivr the first time it opens.
 
@@ -143,6 +144,7 @@ The 3D view uses [Spark](https://sparkjs.dev) and three.js, loaded from jsDelivr
 ```bash
 .venv/bin/pip install -e ".[test]"
 .venv/bin/python -m pytest -q
+node tests/roomdetect.test.mjs     # room detection on synthetic scans
 ```
 
 The banner, logo and social image are generated from code (`assets/brand/`), including the logotype, which is drawn from circles and lines rather than set in a font:

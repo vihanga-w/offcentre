@@ -26,6 +26,11 @@ let pos = null; // {left:{x,y}, right:{x,y}, seat:{x,y}} in metres, local copy
 let view = null; // {x0, y0, w, h} in cm
 let dragging = null;
 
+// Walls from a 3D scan, in plan metres. Display only, so it's kept in this browser.
+const ROOM_KEY = "offcentre-room-outline";
+let outline = null;
+try { outline = JSON.parse(localStorage.getItem(ROOM_KEY) || "null"); } catch { outline = null; }
+
 function el(tag, attrs = {}, parent = svg) {
   const node = document.createElementNS(NS, tag);
   for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
@@ -79,7 +84,7 @@ function push(changes, immediate) {
 // ---------- view ----------
 
 function fitView() {
-  const pts = Object.values(pos);
+  const pts = [...Object.values(pos), ...(outline || [])];
   const xs = pts.map((p) => p.x * 100), ys = pts.map((p) => p.y * 100);
   const pad = 90;
   let x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad;
@@ -111,6 +116,7 @@ const shapes = {};
 function build() {
   svg.replaceChildren();
   gridLayer = el("g");
+  shapes.walls = el("polygon", { class: "room-wall" }, el("g"));
   rayLayer = el("g");
   itemLayer = el("g");
 
@@ -220,6 +226,14 @@ function draw() {
   if (!pos || !view) return;
   const k = pxToCm();
   const { left, right, seat } = pos;
+
+  if (outline) {
+    shapes.walls.setAttribute("points", outline.map((c) => `${c.x * 100},${c.y * 100}`).join(" "));
+    shapes.walls.setAttribute("stroke-width", 5 * k);
+    shapes.walls.style.display = "";
+  } else {
+    shapes.walls.style.display = "none";
+  }
 
   setLine(shapes.span, left, right);
   setLine(shapes.rayL, seat, left);
@@ -411,6 +425,18 @@ $("level_law").addEventListener("change", (e) => {
 
 // Lets the 3D scan view place everything at once, with the same derived correction.
 window.sbRoom = {
+  setRoom(corners) {
+    outline = corners.map((c) => ({ x: +c.x.toFixed(3), y: +c.y.toFixed(3) }));
+    try { localStorage.setItem(ROOM_KEY, JSON.stringify(outline)); } catch { /* storage unavailable */ }
+    view = null; // force a refit around the room
+    fitView(); draw();
+  },
+  clearRoom() {
+    outline = null;
+    try { localStorage.removeItem(ROOM_KEY); } catch { /* storage unavailable */ }
+    view = null;
+    fitView(); draw();
+  },
   setPositions(next) {
     for (const key of ["left", "right", "seat"]) pos[key] = { x: +next[key].x.toFixed(2), y: +next[key].y.toFixed(2) };
     fitView(); draw(); renderTable();

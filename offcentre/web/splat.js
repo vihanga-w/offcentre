@@ -6,6 +6,8 @@
 // leaves the browser; placed markers are remembered per file in localStorage.
 
 const $ = (id) => document.getElementById(id);
+import { detectRoom } from "./roomdetect.js";
+
 const MARKERS = {
   left: { name: "Left HomePod", color: 0x5b8ff0 },
   right: { name: "Right HomePod", color: 0xe39045 },
@@ -26,6 +28,8 @@ let visible = false;
 let moveSpeed = 1; // metres per second for WASD, set from the scan's size when it loads
 const held = new Set(); // movement keys currently down
 let lastFrame = 0;
+let room = null; // detected room (world space), see roomdetect.js
+let roomLines = null;
 
 // ---------- view switching ----------
 
@@ -128,6 +132,7 @@ async function load(file) {
   fileKey = `offcentre-scan:${file.name}:${file.size}`;
   restore();
   frameCamera();
+  findRoom();
   status(`${file.name} · click to place the ${MARKERS[current].name.toLowerCase()}`);
 }
 
@@ -154,7 +159,80 @@ function applyFlip() {
   else splat.quaternion.set(0, 0, 0, 1);
   splat.updateMatrixWorld(true);
 }
-$("scan-flip").addEventListener("change", () => { applyFlip(); if (splat) { frameCamera(); update(); } });
+$("scan-flip").addEventListener("change", () => {
+  applyFlip();
+  if (splat) { frameCamera(); update(); findRoom(); } // "up" changed, so the room must be re-found
+});
+
+// ---------- room detection ----------
+
+// Collect splat centres in world space (subsampled on huge scans) and find floor, walls and
+// ceiling. Then outline the room and frame the camera to it rather than to stray splats.
+function findRoom() {
+  status("Finding the room…");
+  setTimeout(() => {
+    splat.updateMatrixWorld(true);
+    const e = splat.matrixWorld.elements;
+    const total = splat.packedSplats?.numSplats ?? 0;
+    const stride = Math.max(1, Math.ceil(total / 400000));
+    const pts = [];
+    splat.forEachSplat((i, c, _scales, _q, opacity) => {
+      if (i % stride || opacity < 0.3) return; // faint splats are mostly floaters
+      pts.push(e[0] * c.x + e[4] * c.y + e[8] * c.z + e[12],
+               e[1] * c.x + e[5] * c.y + e[9] * c.z + e[13],
+               e[2] * c.x + e[6] * c.y + e[10] * c.z + e[14]);
+    });
+    room = detectRoom(new Float32Array(pts));
+    drawRoom();
+    if (room) frameToRoom();
+    measure();
+    const next = ORDER.find((k) => !picks[k]);
+    status(room ? (next ? `Room found. Click to place the ${MARKERS[next].name.toLowerCase()}` : "Room found.")
+                : "Couldn't make out the room's walls; you can still place the markers.");
+  }, 30);
+}
+
+function drawRoom() {
+  if (roomLines) { scene.remove(roomLines); roomLines.geometry.dispose(); roomLines = null; }
+  if (!room) return;
+  const top = room.ceilY ?? room.floorY + 2.4;
+  const pts = [];
+  const cs = room.corners;
+  for (let i = 0; i < 4; i++) {
+    const a = cs[i], b = cs[(i + 1) % 4];
+    pts.push(new THREE.Vector3(a.x, room.floorY, a.z), new THREE.Vector3(b.x, room.floorY, b.z)); // floor edge
+    pts.push(new THREE.Vector3(a.x, top, a.z), new THREE.Vector3(b.x, top, b.z));                 // top edge
+    pts.push(new THREE.Vector3(a.x, room.floorY, a.z), new THREE.Vector3(a.x, top, a.z));         // corner post
+  }
+  roomLines = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: 0x9fd0ff, transparent: true, opacity: 0.55, depthTest: false }),
+  );
+  roomLines.renderOrder = 8;
+  scene.add(roomLines);
+}
+
+// Stand a little back from the middle of the room at eye height, looking along its longer side
+// and slightly down. Phone scans are captured from the middle, so that's where they're sharpest
+// (corners are the worst-covered part), and inside the room a scanned ceiling can't block the
+// view or catch clicks. Walking speed and clipping planes are scaled to the room too.
+function frameToRoom() {
+  const [c0, c1, , c3] = room.corners;
+  const cx = room.corners.reduce((a, c) => a + c.x, 0) / 4;
+  const cz = room.corners.reduce((a, c) => a + c.z, 0) / 4;
+  const size = Math.hypot(room.width, room.depth);
+  const ux = c1.x - c0.x, uz = c1.z - c0.z, vx = c3.x - c0.x, vz = c3.z - c0.z;
+  const [ax, az] = Math.hypot(ux, uz) >= Math.hypot(vx, vz) ? [ux, uz] : [vx, vz];
+  const len = Math.hypot(ax, az), dx = ax / len, dz = az / len;
+  const eye = Math.min((room.ceilY ?? Infinity) - 0.2, room.floorY + 1.6);
+  camera.position.set(cx - dx * len * 0.3, eye, cz - dz * len * 0.3);
+  controls.target.set(cx + dx * len * 0.3, room.floorY + 0.7, cz + dz * len * 0.3);
+  camera.near = 0.02;
+  camera.far = size * 30;
+  camera.updateProjectionMatrix();
+  moveSpeed = Math.max(size * 0.2, 0.5);
+  controls.update();
+}
 
 // ---------- keyboard movement ----------
 
@@ -370,8 +448,13 @@ function layout() {
   if (sy < 0) { yh.negate(); sy = -sy; }
   const real = parseFloat($("scan-real").value);
   const scale = real > 0 ? real / spanLen : 1;
+  // The detected room's corners in the same plan coordinates.
+  const roomCorners = room && room.corners.map((c) => {
+    const d = new THREE.Vector2(c.x, c.z).sub(l);
+    return { x: d.dot(xh) * scale, y: d.dot(yh) * scale };
+  });
   return {
-    scale, spanLen,
+    scale, spanLen, roomCorners,
     plan: {
       left: { x: 0, y: 0 },
       right: { x: spanLen * scale, y: 0 },
@@ -382,13 +465,22 @@ function layout() {
   };
 }
 
+function roomSummary(scale) {
+  if (!room) return "";
+  const f = (v) => (v * scale).toFixed(2);
+  const missing = 4 - room.wallsFound;
+  return `Room: <b>${f(room.width)} × ${f(room.depth)} m</b>` +
+    (room.height !== null ? `, ceiling ${f(room.height)} m` : ", no ceiling in the scan") +
+    (missing ? ` (${missing} wall${missing === 1 ? "" : "s"} estimated from the floor's edge)` : "") + ". ";
+}
+
 function measure() {
   const out = $("scan-dist");
   const placed = ORDER.filter((k) => picks[k]).map((k) => MARKERS[k].name);
   const lay = layout();
   $("scan-apply").disabled = !lay;
   if (!lay) {
-    out.textContent = placed.length ? `Placed: ${placed.join(", ")}.` : "";
+    out.innerHTML = roomSummary(1) + (placed.length ? `Placed: ${placed.join(", ")}.` : "");
     $("scan-scale").textContent = "";
     return;
   }
@@ -397,7 +489,7 @@ function measure() {
     : `Scan said ${lay.spanLen.toFixed(2)} m, so everything is scaled ×${lay.scale.toFixed(3)}.`;
   const floor = (k) => Math.hypot(lay.plan.seat.x - lay.plan[k].x, lay.plan.seat.y - lay.plan[k].y);
   const h = (k) => `${lay.heights[k] >= 0 ? "+" : ""}${lay.heights[k].toFixed(2)} m`;
-  out.innerHTML =
+  out.innerHTML = roomSummary(lay.scale) +
     `To the left HomePod: <b>${lay.d3.left.toFixed(2)} m</b> (${floor("left").toFixed(2)} m along the floor, height ${h("left")}). ` +
     `To the right HomePod: <b>${lay.d3.right.toFixed(2)} m</b> (${floor("right").toFixed(2)} m along the floor, height ${h("right")}).`;
 }
@@ -407,6 +499,7 @@ $("scan-apply").onclick = () => {
   const lay = layout();
   if (!lay || !window.sbRoom) return;
   window.sbRoom.setPositions(lay.plan);
+  if (lay.roomCorners) window.sbRoom.setRoom(lay.roomCorners);
   showView(false);
 };
 
@@ -439,7 +532,7 @@ function restore() {
 // Debug handle for scripted tests (project known points to the screen, inspect picks).
 window.sbScanDebug = {
   get THREE() { return THREE; }, get camera() { return camera; }, get splat() { return splat; },
-  get canvas() { return renderer?.domElement; }, get picks() { return picks; }, get gizmo() { return gizmo; }, layout,
+  get canvas() { return renderer?.domElement; }, get picks() { return picks; }, get gizmo() { return gizmo; }, get room() { return room; }, layout,
   renderOnce() { controls.update(); renderer.render(scene, camera); },
   walk, held,
 };
