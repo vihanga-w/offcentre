@@ -117,8 +117,12 @@ function build() {
   shapes.span = el("line", { class: "span" }, rayLayer);
   shapes.rayL = el("line", { class: "ray left" }, rayLayer);
   shapes.rayR = el("line", { class: "ray right" }, rayLayer);
+  // Each label gets a background plate: a text halo can't hide grid lines between words.
+  shapes.plateL = el("rect", { class: "plate" }, rayLayer);
   shapes.labelL = el("text", { class: "dim-label left", "text-anchor": "middle" }, rayLayer);
+  shapes.plateR = el("rect", { class: "plate" }, rayLayer);
   shapes.labelR = el("text", { class: "dim-label right", "text-anchor": "middle" }, rayLayer);
+  shapes.plateSpan = el("rect", { class: "plate" }, rayLayer);
   shapes.labelSpan = el("text", { class: "dim-label span", "text-anchor": "middle" }, rayLayer);
 
   for (const item of ITEMS) {
@@ -126,10 +130,13 @@ function build() {
     const hit = el("circle", { class: "hit" }, g);
     const halo = el("circle", { class: "halo" }, g);
     const body = el("circle", { class: item.cls }, g);
+    const namePlate = el("rect", { class: "plate" }, g);
     const name = el("text", { class: "name", "text-anchor": "middle" }, g);
     name.textContent = item.name;
+    const coordPlate = el("rect", { class: "plate" }, g);
     const coord = el("text", { class: "coord", "text-anchor": "middle" }, g);
-    shapes[item.key] = { g, hit, halo, body, name, coord, r: item.cls === "pod" ? POD_R : SEAT_R };
+    shapes[item.key] = { g, hit, halo, body, name, coord, namePlate, coordPlate,
+                         r: item.cls === "pod" ? POD_R : SEAT_R };
     g.addEventListener("pointerdown", (e) => startDrag(e, item.key));
     g.addEventListener("keydown", (e) => nudge(e, item.key));
   }
@@ -157,10 +164,6 @@ function drawGrid() {
       t.textContent = `y ${y / 100} m`;
     }
   }
-  // origin marker label
-  const t = el("text", { x: -12 * k, y: 4 * k, class: "axis-label", "font-size": 12 * k,
-    "text-anchor": "end" }, gridLayer);
-  t.textContent = "origin";
 }
 
 function setLine(line, a, b) {
@@ -168,16 +171,49 @@ function setLine(line, a, b) {
   line.setAttribute("x2", b.x * 100); line.setAttribute("y2", b.y * 100);
 }
 
-function setLabel(text, a, b, str, k, offsetPx) {
-  // Midpoint, pushed perpendicular to the line so it doesn't sit on top of it.
-  const mx = (a.x + b.x) * 50, my = (a.y + b.y) * 50;
+// Unit normal of a->b, pointing away from `away` (or along `prefer` when given).
+function normal(a, b, { away = null, prefer = null } = {}) {
   let nx = -(b.y - a.y), ny = b.x - a.x;
   const n = Math.hypot(nx, ny) || 1;
   nx /= n; ny /= n;
-  text.setAttribute("x", mx + nx * offsetPx * k);
-  text.setAttribute("y", my + ny * offsetPx * k + 4 * k);
+  if (prefer) {
+    if (nx * prefer[0] + ny * prefer[1] < 0) { nx = -nx; ny = -ny; }
+  } else if (away) {
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    if (nx * (away.x - mx) + ny * (away.y - my) > 0) { nx = -nx; ny = -ny; }
+  }
+  return [nx, ny];
+}
+
+function fitPlate(plate, box, k) {
+  if (!box || !box.width) { plate.setAttribute("width", 0); return; }
+  plate.setAttribute("x", box.x - 3 * k);
+  plate.setAttribute("y", box.y - 1 * k);
+  plate.setAttribute("width", box.width + 6 * k);
+  plate.setAttribute("height", box.height + 2 * k);
+  plate.setAttribute("rx", 3 * k);
+}
+
+function boxesOverlap(p, q, pad) {
+  return p.x < q.x + q.width + pad && q.x < p.x + p.width + pad &&
+         p.y < q.y + q.height + pad && q.y < p.y + p.height + pad;
+}
+
+// Place a distance label beside its line, then step it outward until it clears `taken`.
+function placeLabel(text, plate, a, b, str, k, n, along, taken) {
+  const px = (a.x + (b.x - a.x) * along) * 100, py = (a.y + (b.y - a.y) * along) * 100;
   text.setAttribute("font-size", 13 * k);
   text.textContent = str;
+  let box = null;
+  for (let step = 0; step < 10; step++) {
+    const off = (17 + step * 9) * k;
+    text.setAttribute("x", px + n[0] * off);
+    text.setAttribute("y", py + n[1] * off + 4 * k);
+    box = text.getBBox();
+    if (!box.width || !taken.some((t) => boxesOverlap(box, t, 3 * k))) break;
+  }
+  fitPlate(plate, box, k);
+  if (box && box.width) taken.push(box);
 }
 
 function draw() {
@@ -192,10 +228,11 @@ function draw() {
     line.setAttribute("stroke-width", (line === shapes.span ? 1.4 : 2.4) * k);
     line.setAttribute("stroke-dasharray", line === shapes.span ? `${6 * k} ${5 * k}` : "");
   }
-  setLabel(shapes.labelL, seat, left, `${dist(seat, left).toFixed(2)} m`, k, 14);
-  setLabel(shapes.labelR, seat, right, `${dist(seat, right).toFixed(2)} m`, k, -14);
-  setLabel(shapes.labelSpan, left, right, `${dist(left, right).toFixed(2)} m apart`, k, -16);
 
+  // Markers first. Each marker's name and coordinates sit on the side facing away from the
+  // others (speakers usually above, the seat usually below), so close markers don't collide.
+  const taken = [];
+  const nearestPod = dist(seat, left) <= dist(seat, right) ? left : right;
   for (const item of ITEMS) {
     const sh = shapes[item.key], p = pos[item.key];
     const cx = p.x * 100, cy = p.y * 100;
@@ -205,13 +242,40 @@ function draw() {
       c.setAttribute("cx", cx); c.setAttribute("cy", cy); c.setAttribute("r", rad);
     }
     sh.halo.setAttribute("stroke-width", 2 * k);
-    sh.name.setAttribute("x", cx); sh.name.setAttribute("y", cy - r - 9 * k);
+    const below = item.key === "seat" ? seat.y >= nearestPod.y : p.y > seat.y;
     sh.name.setAttribute("font-size", 13 * k);
-    sh.coord.setAttribute("x", cx); sh.coord.setAttribute("y", cy + r + 17 * k);
     sh.coord.setAttribute("font-size", 11.5 * k);
+    sh.name.setAttribute("x", cx); sh.coord.setAttribute("x", cx);
+    if (below) {
+      sh.name.setAttribute("y", cy + r + 17 * k);
+      sh.coord.setAttribute("y", cy + r + 32 * k);
+    } else {
+      sh.coord.setAttribute("y", cy - r - 8 * k);
+      sh.name.setAttribute("y", cy - r - 23 * k);
+    }
     sh.coord.textContent = `x ${p.x.toFixed(2)}  y ${p.y.toFixed(2)}`;
     sh.g.setAttribute("aria-label", `${item.name} at x ${p.x.toFixed(2)} m, y ${p.y.toFixed(2)} m`);
+    fitPlate(sh.namePlate, sh.name.getBBox(), k);
+    fitPlate(sh.coordPlate, sh.coord.getBBox(), k);
+    for (const t of [sh.name, sh.coord, sh.body]) {
+      const b = t.getBBox();
+      if (b.width) taken.push(b);
+    }
   }
+
+  // Then the distance labels, which move out of the way. The span label goes on the side away
+  // from the seat, the far ray's label on the opposite side to it, the near ray's away from the
+  // far speaker; ray labels sit nearer the seat than the span label's midpoint.
+  const nSpan = normal(left, right, { away: seat });
+  const nearKey = dist(seat, left) <= dist(seat, right) ? "left" : "right";
+  const farKey = nearKey === "left" ? "right" : "left";
+  const rays = { left: shapes.labelL, right: shapes.labelR };
+  const plates = { left: shapes.plateL, right: shapes.plateR };
+  placeLabel(rays[nearKey], plates[nearKey], seat, pos[nearKey], `${dist(seat, pos[nearKey]).toFixed(2)} m`, k,
+    normal(seat, pos[nearKey], { away: pos[farKey] }), 0.5, taken);
+  placeLabel(rays[farKey], plates[farKey], seat, pos[farKey], `${dist(seat, pos[farKey]).toFixed(2)} m`, k,
+    normal(seat, pos[farKey], { prefer: [-nSpan[0], -nSpan[1]] }), 0.4, taken);
+  placeLabel(shapes.labelSpan, shapes.plateSpan, left, right, `${dist(left, right).toFixed(2)} m apart`, k, nSpan, 0.5, taken);
 }
 
 // ---------- interaction ----------

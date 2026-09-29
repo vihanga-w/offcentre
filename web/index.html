@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Offcentre</title>
+<title>offcentre</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
@@ -34,7 +35,8 @@
   }
   main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
   header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  h1 { margin: 0; line-height: 0; }
+  .logotype { height: 30px; width: auto; color: var(--ink); display: block; }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
   .conn { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); }
@@ -96,6 +98,7 @@
   #plan .dim-label.span { fill: var(--muted); stroke-dasharray: none; stroke: var(--bg); stroke-width: 4px; }
   #plan .coord { fill: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
   #plan .name { fill: var(--ink); font-size: 13px; font-weight: 600; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+  #plan .plate { fill: var(--bg); fill-opacity: 0.88; }
   #plan .handle { cursor: grab; }
   #plan .handle:active { cursor: grabbing; }
   #plan .hit { fill: transparent; }
@@ -137,7 +140,7 @@
 <body>
 <main>
   <header>
-    <h1>Offcentre</h1>
+    <h1><svg class="logotype" viewBox="-9 -140 792 150" role="img" aria-label="offcentre"><path d="M9.0 -50.0 A41.0 41.0 0 1 1 91.0 -50.0 A41.0 41.0 0 1 1 9.0 -50.0 M131.0 -9.0 V-104 A26 26 0 0 1 157.0 -130 H165.0 M177.0 -9.0 V-104 A26 26 0 0 1 203.0 -130 H211.0 M113.0 -91.0 H213.0 M306.5 -77.4 A41.0 41.0 0 1 0 306.5 -22.6 M337.5 -50.0 H419.5 A41.0 41.0 0 1 0 405.9 -19.5 M450.4689378445732 -9.0 V-91.0 M450.4689378445732 -59.0 A32 32 0 0 1 514.4689378445732 -59.0 V-9.0 M553.4689378445732 -128 V-30 A21 21 0 0 0 574.4689378445732 -9.0 H581.4689378445732 M536.4689378445732 -91.0 H579.4689378445732 M608.4689378445732 -9.0 V-91.0 M608.4689378445732 -58 C608.4689378445732 -80 628.4689378445732 -91.0 654.4689378445732 -91.0 M683.5 -50.0 H765.5 A41.0 41.0 0 1 0 751.9 -19.5" fill="none" stroke="currentColor" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/><circle cx="39.0" cy="-46.0" r="13" fill="var(--accent)"/></svg></h1>
     <div class="conn"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
   </header>
   <div class="route" id="route"></div>

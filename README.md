@@ -1,10 +1,27 @@
-# offcentre
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+    <img alt="offcentre: fix the stereo image when you can't sit in the middle" src="assets/banner-light.svg" width="100%">
+  </picture>
+</p>
 
-**Fix the stereo image when you can't sit in the middle.**
+<p align="center">
+  <img alt="macOS 14.2+" src="https://img.shields.io/badge/macOS-14.2%2B-16181d?logo=apple&logoColor=white">
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-2f6fdb?logo=python&logoColor=white">
+  <img alt="AirPlay and HomePod" src="https://img.shields.io/badge/AirPlay-HomePod%20ready-d9730d">
+  <img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-5b6270">
+</p>
 
 Sit closer to one speaker and two things go wrong: its sound reaches you first and louder, and your brain pins the whole stereo image to it (the [Haas effect](https://en.wikipedia.org/wiki/Precedence_effect)). Vocals that should float between the speakers come from the near one.
 
-offcentre fixes this in real time on macOS. It delays and turns down the nearer speaker by exactly the right amount, so both speakers reach your seat together and at the same level. It works with AirPlay speakers such as a HomePod stereo pair, and with any wired speakers.
+**offcentre** fixes this in real time on macOS. It delays and turns down the nearer speaker by exactly the right amount, so both speakers reach your seat together and at the same level. It works with AirPlay speakers such as a HomePod stereo pair, and with any wired speakers.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshot-dark.png">
+    <img alt="The offcentre control page: compare switch and a to-scale room plan with two speakers and the listening seat" src="assets/screenshot-light.png" width="720">
+  </picture>
+</p>
 
 ```
 apps ──▶ Core Audio tap ──▶ offcentre ──────────────▶ system output (AirPlay / HomePods / DAC)
@@ -112,6 +129,13 @@ The 3D view uses [Spark](https://sparkjs.dev) and three.js, loaded from jsDelivr
 ```bash
 .venv/bin/pip install pytest
 .venv/bin/python -m pytest -q
+```
+
+The banner, logo and social image are generated from code (`assets/brand/`), including the logotype, which is drawn from circles and lines rather than set in a font:
+
+```bash
+python3 assets/brand/build.py      # SVGs and the favicon
+sh assets/brand/render.sh          # social-preview.png, via headless Chrome
 ```
 
 ## License
