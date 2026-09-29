@@ -13,8 +13,9 @@ const MARKERS = {
 };
 const ORDER = ["left", "right", "seat"];
 
-let THREE, OrbitControls, SplatMesh, SparkRenderer;
+let THREE, OrbitControls, TransformControls, SplatMesh, SparkRenderer;
 let renderer, scene, camera, controls;
+let gizmo = null; // X/Y/Z move handles on the selected marker
 let splat = null; // current SplatMesh
 let fileKey = null; // localStorage key for the current file
 let picks = {}; // marker -> THREE.Vector3 in the splat's local frame
@@ -22,6 +23,9 @@ let markerObjs = {};
 let lines = null;
 let current = "left";
 let visible = false;
+let moveSpeed = 1; // metres per second for WASD, set from the scan's size when it loads
+const held = new Set(); // movement keys currently down
+let lastFrame = 0;
 
 // ---------- view switching ----------
 
@@ -52,6 +56,7 @@ function init() {
     try {
       THREE = await import("three");
       ({ OrbitControls } = await import("three/addons/controls/OrbitControls.js"));
+      ({ TransformControls } = await import("three/addons/controls/TransformControls.js"));
       ({ SplatMesh, SparkRenderer } = await import("@sparkjsdev/spark"));
     } catch (e) {
       status("Couldn't load the 3D viewer (needs internet the first time): " + e.message);
@@ -72,6 +77,7 @@ function init() {
     scene.add(new SparkRenderer({ renderer }));
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    initGizmo();
     new ResizeObserver(resize).observe(stage);
     wirePicking();
     status("");
@@ -88,7 +94,10 @@ function resize() {
   camera.updateProjectionMatrix();
 }
 
-function frame() {
+function frame(now) {
+  const dt = lastFrame ? Math.min((now - lastFrame) / 1000, 0.1) : 0;
+  lastFrame = now;
+  walk(dt);
   controls.update();
   renderer.render(scene, camera);
 }
@@ -133,6 +142,7 @@ function frameCamera() {
   camera.position.copy(centre).add(new THREE.Vector3(0, size * 0.75, size * 0.25));
   camera.near = Math.max(size / 5000, 0.005);
   camera.far = size * 20;
+  moveSpeed = Math.max(size * 0.25, 0.5);
   camera.updateProjectionMatrix();
   controls.update();
 }
@@ -145,6 +155,55 @@ function applyFlip() {
   splat.updateMatrixWorld(true);
 }
 $("scan-flip").addEventListener("change", () => { applyFlip(); if (splat) { frameCamera(); update(); } });
+
+// ---------- keyboard movement ----------
+
+// W/S forward and back, A/D sideways (level with the floor, like walking), Q/E down and up,
+// Shift for faster. The orbit target moves with the camera so mouse orbiting carries on
+// from wherever you've walked to.
+const MOVE_KEYS = new Set(["w", "a", "s", "d", "q", "e"]);
+
+function typing(target) {
+  return target instanceof HTMLInputElement || target instanceof HTMLSelectElement ||
+    target instanceof HTMLTextAreaElement || target?.isContentEditable;
+}
+
+window.addEventListener("keydown", (e) => {
+  if (!visible || !splat || typing(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+  const key = e.key.toLowerCase();
+  if (MOVE_KEYS.has(key)) {
+    held.add(key);
+    e.preventDefault();
+    e.stopPropagation(); // keep the page's own shortcuts (B for bypass) out of it
+  }
+  if (e.key === "Shift") held.add("shift");
+}, true);
+window.addEventListener("keyup", (e) => {
+  held.delete(e.key.toLowerCase());
+  if (e.key === "Shift") held.delete("shift");
+});
+window.addEventListener("blur", () => held.clear());
+
+function walk(dt) {
+  if (!dt || !held.size || !camera) return;
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  forward.y = 0;
+  if (forward.lengthSq() < 1e-8) forward.set(0, 0, -1).applyQuaternion(camera.quaternion).setY(0);
+  forward.normalize();
+  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  const move = new THREE.Vector3();
+  if (held.has("w")) move.add(forward);
+  if (held.has("s")) move.sub(forward);
+  if (held.has("d")) move.add(right);
+  if (held.has("a")) move.sub(right);
+  if (held.has("e")) move.y += 1;
+  if (held.has("q")) move.y -= 1;
+  if (!move.lengthSq()) return;
+  move.normalize().multiplyScalar(moveSpeed * dt * (held.has("shift") ? 3 : 1));
+  camera.position.add(move);
+  controls.target.add(move);
+}
 
 // ---------- drop / open ----------
 
@@ -175,32 +234,80 @@ function setCurrent(key) {
 }
 document.querySelectorAll("[data-pick]").forEach((b) => (b.onclick = () => setCurrent(b.dataset.pick)));
 
+// ---------- X/Y/Z move handles ----------
+
+function initGizmo() {
+  gizmo = new TransformControls(camera, renderer.domElement);
+  gizmo.setMode("translate");
+  gizmo.setSpace("world"); // X across, Y up, Z depth, whatever the marker's parent is doing
+  gizmo.setSize(0.8);
+  // Don't orbit the camera while a handle is being dragged; save when the drag ends.
+  gizmo.addEventListener("dragging-changed", (e) => {
+    controls.enabled = !e.value;
+    if (!e.value) save();
+  });
+  gizmo.addEventListener("objectChange", () => {
+    const m = gizmo.object;
+    if (!m) return;
+    picks[m.userData.key] = m.position.clone(); // markers live in the splat's local frame
+    update();
+  });
+  // Splats draw in the transparent pass; keep the handles on top of them.
+  const helper = gizmo.getHelper();
+  helper.traverse((o) => { o.renderOrder = 20; });
+  scene.add(helper);
+}
+
+function select(key) {
+  const m = markerObjs[key];
+  if (gizmo && m) gizmo.attach(m);
+}
+
 function wirePicking() {
   const canvas = renderer.domElement;
-  const raycaster = new THREE.Raycaster();
   let down = null;
-  canvas.addEventListener("pointerdown", (e) => { down = [e.clientX, e.clientY, e.button]; });
+  canvas.addEventListener("pointerdown", (e) => {
+    // gizmo.axis is set while the pointer is over one of its handles
+    down = [e.clientX, e.clientY, e.button, Boolean(gizmo?.axis)];
+  });
   canvas.addEventListener("pointerup", (e) => {
-    if (!splat || !down || down[2] !== 0) return;
+    if (!splat || !down || down[2] !== 0 || down[3]) return; // not a left click, or a handle drag
     if (Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return; // it was an orbit drag
     const rect = canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(
       ((e.clientX - rect.left) / rect.width) * 2 - 1,
       -((e.clientY - rect.top) / rect.height) * 2 + 1,
     );
+    // A fresh raycaster per click: the surface lookup runs a frame later, and a shared one
+    // would be re-aimed by a quick second click before the first lookup runs.
+    const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(ndc, camera);
+    const target = current; // likewise, the marker this click is for
+    // Clicking a marker selects it for fine adjustment instead of re-placing anything.
+    const markerHit = raycaster.intersectObjects(Object.values(markerObjs), false)[0];
+    if (markerHit) {
+      const key = markerHit.object.userData.key;
+      setCurrent(key);
+      select(key);
+      status(`Drag the arrows to adjust the ${MARKERS[key].name.toLowerCase()}, or click the scan to re-place it.`);
+      return;
+    }
     status("Finding the surface…");
-    // Raycasting a splat walks every point, so it only runs on click.
-    requestAnimationFrame(() => {
+    // Raycasting a splat walks every point, so it only runs on click. The short timer lets
+    // the status message paint first; unlike an animation frame, it also runs when the page
+    // isn't visible.
+    setTimeout(() => {
       const hit = raycaster.intersectObject(splat, false)[0];
       if (!hit) { status("Missed the scan; click on a surface."); return; }
-      picks[current] = splat.worldToLocal(hit.point.clone());
+      const placed = target;
+      picks[placed] = splat.worldToLocal(hit.point.clone());
       save();
       update();
+      select(placed);
       const next = ORDER.find((k) => !picks[k]);
       if (next) setCurrent(next);
       else status("All three placed. Check the distances, then “Use these positions”.");
-    });
+    }, 30);
   });
 }
 
@@ -226,6 +333,7 @@ function update() {
         new THREE.MeshBasicMaterial({ color: MARKERS[key].color, depthTest: false, transparent: true, opacity: 0.95 }),
       );
       m.renderOrder = 10;
+      m.userData.key = key;
       splat.add(m);
       markerObjs[key] = m;
     }
@@ -312,6 +420,7 @@ function save() {
 }
 
 function restore() {
+  gizmo?.detach();
   for (const m of Object.values(markerObjs)) { m.parent?.remove(m); m.geometry.dispose(); }
   markerObjs = {};
   picks = {};
@@ -330,5 +439,7 @@ function restore() {
 // Debug handle for scripted tests (project known points to the screen, inspect picks).
 window.sbScanDebug = {
   get THREE() { return THREE; }, get camera() { return camera; }, get splat() { return splat; },
-  get canvas() { return renderer?.domElement; }, get picks() { return picks; }, layout,
+  get canvas() { return renderer?.domElement; }, get picks() { return picks; }, get gizmo() { return gizmo; }, layout,
+  renderOnce() { controls.update(); renderer.render(scene, camera); },
+  walk, held,
 };
